@@ -3,6 +3,7 @@
 echo "current path: "
 pwd
 
+
 echo "cerrent date and time: "
 date "+%Y-%m-%d %H:%M:%S"
 
