@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
 
   int *array = malloc(sizeof(int) * array_size);
   GenerateArray(array, array_size, seed);
-а
+
   int pipes[pnum][2];
   if (!with_files) {
     for (int i = 0; i < pnum; i++) {
@@ -111,6 +111,9 @@ int main(int argc, char **argv) {
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
+
+  int chunk_size = array_size / pnum;
+
   for (int i = 0; i < pnum; i++) {
     pid_t child_pid = fork();
     if (child_pid >= 0) {
@@ -120,24 +123,24 @@ int main(int argc, char **argv) {
       
       if (child_pid == 0) {
         // child process
-	int start = i * chunk_size;
+	    int start = i * chunk_size;
         int end = (i == pnum - 1) ? array_size : start + chunk_size;
         // parallel someho
-	struct MinMax local_min_max = GetMinMax(array, start, end);
+	    struct MinMax local_min_max = GetMinMax(array, start, end);
 
         if (with_files) {
           // use files here
-	  char filename_min[32], filename_max[32];
+	      char filename_min[32], filename_max[32];
           sprintf(filename_min, "min_%d.txt", i);
           sprintf(filename_max, "max_%d.txt", i);
 	  
-	  FILE *file_min = fopen(filename_min, "w");
+	  	  FILE *file_min = fopen(filename_min, "w");
           if (file_min != NULL) {
             fprintf(file_min, "%d", local_min_max.min);
             fclose(file_min);
           }
 	  
-	  FILE *file_max = fopen(filename_max, "w");
+	  	  FILE *file_max = fopen(filename_max, "w");
           if (file_max != NULL) {
             fprintf(file_max, "%d", local_min_max.max);
             fclose(file_max);
@@ -145,11 +148,13 @@ int main(int argc, char **argv) {
 
         } else {
 	        close(pipes[i][0]);
-		write(pipes[i][1], &local_min_max.min, sizeof(int));
-                write(pipes[i][1], &local_min_max.max, sizeof(int));
-		close(pipes[i][1]);
+		    write(pipes[i][1], &local_min_max.min, sizeof(int));
+            write(pipes[i][1], &local_min_max.max, sizeof(int));
+			close(pipes[i][1]);
 	}
-
+		free(array);
+        exit(0);
+		  
     } else {
       printf("Fork failed!\n");
       free(array);
@@ -158,8 +163,7 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
+    wait(NULL);
     active_child_processes -= 1;
   }
 
@@ -173,8 +177,29 @@ int main(int argc, char **argv) {
 
     if (with_files) {
       // read from files
+      char filename_min[32], filename_max[32];
+      sprintf(filename_min, "min_%d.txt", i);
+      sprintf(filename_max, "max_%d.txt", i);
+      
+      FILE *file_min = fopen(filename_min, "r");
+      if (file_min != NULL) {
+        fscanf(file_min, "%d", &min);
+        fclose(file_min);
+        remove(filename_min);
+      }
+      
+      FILE *file_max = fopen(filename_max, "r");
+      if (file_max != NULL) {
+        fscanf(file_max, "%d", &max);
+        fclose(file_max);
+        remove(filename_max);
+      }
     } else {
       // read from pipes
+		close(pipes[i][1]);
+		read(pipes[i][0], &min, sizeof(int));
+      	read(pipes[i][0], &max, sizeof(int));
+		close(pipes[i][0]);
     }
 
     if (min < min_max.min) min_max.min = min;
@@ -192,6 +217,7 @@ int main(int argc, char **argv) {
   printf("Min: %d\n", min_max.min);
   printf("Max: %d\n", min_max.max);
   printf("Elapsed time: %fms\n", elapsed_time);
+  printf("Array size: %d, Processes: %d, Sync method: %s\n", array_size, pnum, with_files ? "files" : "pipes");
   fflush(NULL);
   return 0;
 }
