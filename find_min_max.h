@@ -1,8 +1,11 @@
 #ifndef FIND_MIN_MAX_H
 #define FIND_MIN_MAX_H
 
-#include "utils.h"
+struct MinMax {
+  int min;
+  int max;
+};
 
-struct MinMax GetMinMax(int *array, unsigned int begin, unsigned int end);
+struct MinMax GetMinMax(int *array, int start, int end);
 
 #endif
