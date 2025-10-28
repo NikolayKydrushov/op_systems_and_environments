@@ -1,0 +1,15 @@
+# Простой Makefile для parallel_sum без тестов
+CC = gcc
+CFLAGS = -Wall -std=c99
+LDFLAGS = -lpthread
+TARGET = parallel_sum
+
+all: $(TARGET)
+
+$(TARGET): parallel_sum.c utils.c sum_utils.c
+	$(CC) $(CFLAGS) -o $(TARGET) parallel_sum.c utils.c sum_utils.c $(LDFLAGS)
+
+clean:
+	rm -f $(TARGET)
+
+.PHONY: all clean
