@@ -10,6 +10,7 @@
 #include <netinet/ip.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <arpa/inet.h>
 
 #include "pthread.h"
 
@@ -45,7 +46,7 @@ uint64_t Factorial(const struct FactorialArgs *args) {
     }
   }
 
-  printf("   Thread: factorial [%llu-%llu] mod %llu = %llu\n", 
+  printf("   Thread: factorial [%lu-%lu] mod %lu = %lu\n", 
          args->begin, args->end, args->mod, ans);
   return ans;
 }
@@ -82,7 +83,7 @@ void DivideRange(uint64_t begin, uint64_t end, int tnum,
     args[i].end = current_end;
     args[i].mod = mod;
 
-    printf("   Thread %d: calculating range [%llu-%llu] (%llu numbers)\n", 
+    printf("   Thread %d: calculating range [%lu-%lu] (%lu numbers)\n", 
            i, current_start, current_end, current_end - current_start + 1);
 
     current_start = current_end + 1;
@@ -99,8 +100,6 @@ int main(int argc, char **argv) {
   int port = -1;
 
   while (true) {
-    int current_optind = optind ? optind : 1;
-
     static struct option options[] = {{"port", required_argument, 0, 0},
                                       {"tnum", required_argument, 0, 0},
                                       {0, 0, 0, 0}};
@@ -224,13 +223,13 @@ int main(int argc, char **argv) {
       memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
 
       printf("📨 Received from client %s:%d:\n", client_ip, ntohs(client.sin_port));
-      printf("   Range: [%llu - %llu]\n", begin, end);
-      printf("   Modulus: %llu\n", mod);
-      printf("   Total numbers: %llu\n", end - begin + 1);
+      printf("   Range: [%lu - %lu]\n", begin, end);
+      printf("   Modulus: %lu\n", mod);
+      printf("   Total numbers: %lu\n", end - begin + 1);
 
       // Проверяем корректность данных
       if (begin > end) {
-        fprintf(stderr, "Invalid range: begin (%llu) > end (%llu)\n", begin, end);
+        fprintf(stderr, "Invalid range: begin (%lu) > end (%lu)\n", begin, end);
         uint64_t error_result = 0;
         char buffer[sizeof(error_result)];
         memcpy(buffer, &error_result, sizeof(error_result));
@@ -260,7 +259,7 @@ int main(int argc, char **argv) {
       // Если begin = 0, начинаем с 1 (0! = 1, но в произведении 0 даст 0)
       if (begin == 0) {
         begin = 1;
-        printf("   Adjusted range: [1 - %llu] (0 excluded)\n", end);
+        printf("   Adjusted range: [1 - %lu] (0 excluded)\n", end);
       }
 
       pthread_t threads[tnum];
@@ -298,7 +297,7 @@ int main(int argc, char **argv) {
         }
       }
 
-      printf("✅ Total result for range [%llu-%llu] mod %llu = %llu\n", 
+      printf("✅ Total result for range [%lu-%lu] mod %lu = %lu\n", 
              begin, end, mod, total);
 
       // Отправляем результат клиенту
