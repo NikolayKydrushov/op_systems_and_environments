@@ -7,16 +7,39 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define SERV_PORT 10050
-#define BUFSIZE 100
 #define SADDR struct sockaddr
 
-int main() {
+int main(int argc, char **argv) {
+  // Значения по умолчанию
+  int serv_port = 10050;
+  int bufsize = 100;
+
+  // Парсинг аргументов командной строки
+  if (argc > 1) {
+    serv_port = atoi(argv[1]);
+  }
+  if (argc > 2) {
+    bufsize = atoi(argv[2]);
+  }
+
+  // Проверка корректности значений
+  if (serv_port < 1 || serv_port > 65535) {
+    fprintf(stderr, "Invalid port number: %d. Port must be between 1 and 65535\n", serv_port);
+    exit(1);
+  }
+
+  if (bufsize < 1) {
+    fprintf(stderr, "Invalid buffer size: %d. Buffer size must be positive\n", bufsize);
+    exit(1);
+  }
+
+  printf("Starting TCP server on port %d with buffer size %d\n", serv_port, bufsize);
+
   const size_t kSize = sizeof(struct sockaddr_in);
 
   int lfd, cfd;
   int nread;
-  char buf[BUFSIZE];
+  char buf[bufsize];  // Используем переменную вместо константы
   struct sockaddr_in servaddr;
   struct sockaddr_in cliaddr;
 
@@ -28,7 +51,7 @@ int main() {
   memset(&servaddr, 0, kSize);
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(SERV_PORT);
+  servaddr.sin_port = htons(serv_port);  // Используем переменную вместо SERV_PORT
 
   if (bind(lfd, (SADDR *)&servaddr, kSize) < 0) {
     perror("bind");
@@ -40,6 +63,8 @@ int main() {
     exit(1);
   }
 
+  printf("Server is listening on port %d...\n", serv_port);
+
   while (1) {
     unsigned int clilen = kSize;
 
@@ -49,7 +74,7 @@ int main() {
     }
     printf("connection established\n");
 
-    while ((nread = read(cfd, buf, BUFSIZE)) > 0) {
+    while ((nread = read(cfd, buf, bufsize)) > 0) {  // Используем переменную вместо BUFSIZE
       write(1, &buf, nread);
     }
 
