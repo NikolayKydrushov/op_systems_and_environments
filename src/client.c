@@ -1,185 +1,107 @@
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <errno.h>
-#include <getopt.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <pthread.h>
-#include <sys/time.h>  // Добавляем для struct timeval
-#include <arpa/inet.h> // Добавляем для inet_ntoa
 
-struct Server {
-  char ip[255];
-  int port;
-};
+#include <getopt.h>
+#include <sys/socket.h>
 
-// Структура для передачи данных в поток
+#include "common.h"
+
+// Структура для передачи данных в поток (остается специфичной для клиента)
 struct ThreadData {
-  struct Server server;
-  uint64_t begin;
-  uint64_t end;
-  uint64_t mod;
-  uint64_t result;
+    struct Server server;
+    uint64_t begin;
+    uint64_t end;
+    uint64_t mod;
+    uint64_t result;
 };
 
-uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
-  uint64_t result = 0;
-  a = a % mod;
-  while (b > 0) {
-    if (b % 2 == 1)
-      result = (result + a) % mod;
-    a = (a * 2) % mod;
-    b /= 2;
-  }
-
-  return result % mod;
-}
-
-bool ConvertStringToUI64(const char *str, uint64_t *val) {
-  char *end = NULL;
-  unsigned long long i = strtoull(str, &end, 10);
-  if (errno == ERANGE) {
-    fprintf(stderr, "Out of uint64_t range: %s\n", str);
-    return false;
-  }
-
-  if (errno != 0)
-    return false;
-
-  *val = i;
-  return true;
-}
-
-// Функция для чтения серверов из файла
+// Функция для чтения серверов из файла (специфична для клиента)
 int ReadServers(const char *filename, struct Server **servers, int *servers_num) {
-  FILE *file = fopen(filename, "r");
-  if (!file) {
-    fprintf(stderr, "Cannot open servers file: %s\n", filename);
-    return -1;
-  }
-
-  // Считаем количество серверов
-  int count = 0;
-  char line[256];
-  while (fgets(line, sizeof(line), file)) {
-    count++;
-  }
-
-  // Выделяем память
-  *servers = malloc(sizeof(struct Server) * count);
-  *servers_num = count;
-
-  // Читаем данные серверов
-  rewind(file);
-  count = 0;
-  while (fgets(line, sizeof(line), file)) {
-    // Убираем символ новой строки
-    line[strcspn(line, "\n")] = 0;
-    
-    // Парсим ip:port
-    char *colon = strchr(line, ':');
-    if (colon) {
-      *colon = '\0';
-      strcpy((*servers)[count].ip, line);
-      (*servers)[count].port = atoi(colon + 1);
-      count++;
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "Cannot open servers file: %s\n", filename);
+        return -1;
     }
-  }
 
-  fclose(file);
-  return 0;
+    int count = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        count++;
+    }
+
+    *servers = malloc(sizeof(struct Server) * count);
+    *servers_num = count;
+
+    rewind(file);
+    count = 0;
+    while (fgets(line, sizeof(line), file)) {
+        line[strcspn(line, "\n")] = 0;
+        
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            strcpy((*servers)[count].ip, line);
+            (*servers)[count].port = atoi(colon + 1);
+            count++;
+        }
+    }
+
+    fclose(file);
+    return 0;
 }
 
 // Функция для подключения к серверу и получения результата
 void *ConnectToServer(void *arg) {
-  struct ThreadData *data = (struct ThreadData *)arg;
-  
-  struct hostent *hostname = gethostbyname(data->server.ip);
-  if (hostname == NULL) {
-    fprintf(stderr, "gethostbyname failed with %s\n", data->server.ip);
-    data->result = 1; // Нейтральный элемент для умножения
-    return NULL;
-  }
+    struct ThreadData *data = (struct ThreadData *)arg;
+    
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+	fprintf(stderr, "Socket creation failed for %s:%d!\n", data->server.ip, data->server.port);
+        data->result = 1;
+        return NULL;
+    }
 
-  struct sockaddr_in server_addr;
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(data->server.port);
-  
-  // ИСПРАВЛЕНИЕ: правильное копирование адреса из h_addr_list
-  if (hostname->h_addr_list[0] != NULL) {
-    server_addr.sin_addr = *((struct in_addr *)hostname->h_addr_list[0]);
-  } else {
-    fprintf(stderr, "No address found for %s\n", data->server.ip);
-    data->result = 1;
-    return NULL;
-  }
+    // Подготавливаем задачу для сервера
+    char task[sizeof(uint64_t) * 3];
+    memcpy(task, &data->begin, sizeof(uint64_t));
+    memcpy(task + sizeof(uint64_t), &data->end, sizeof(uint64_t));
+    memcpy(task + 2 * sizeof(uint64_t), &data->mod, sizeof(uint64_t));
 
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0) {
-    fprintf(stderr, "Socket creation failed for %s:%d!\n", data->server.ip, data->server.port);
-    data->result = 1;
-    return NULL;
-  }
+    // Отправляем задачу
+    if (send(sockfd, task, sizeof(task), 0) < 0) {
+        fprintf(stderr, "Send to %s:%d failed\n", data->server.ip, data->server.port);
+        close(sockfd);
+        data->result = 1;
+        return NULL;
+    }
 
-  // Устанавливаем таймауты
-  struct timeval timeout;
-  timeout.tv_sec = 5;
-  timeout.tv_usec = 0;
-  setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    // Получаем результат
+    char response[sizeof(uint64_t)];
+    ssize_t bytes_received = recv(sockfd, response, sizeof(response), 0);
+    if (bytes_received < 0) {
+        fprintf(stderr, "Receive from %s:%d failed\n", data->server.ip, data->server.port);
+        close(sockfd);
+        data->result = 1;
+        return NULL;
+    }
 
-  if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    fprintf(stderr, "Connection to %s:%d failed\n", data->server.ip, data->server.port);
+    if (bytes_received != sizeof(uint64_t)) {
+        fprintf(stderr, "Invalid response size from %s:%d\n", data->server.ip, data->server.port);
+        close(sockfd);
+        data->result = 1;
+        return NULL;
+    }
+
+    memcpy(&data->result, response, sizeof(uint64_t));
+    
+    printf("✓ Server %s:%d returned: %lu for range [%lu-%lu]\n", 
+           data->server.ip, data->server.port, data->result, data->begin, data->end);
+
     close(sockfd);
-    data->result = 1;
     return NULL;
-  }
-
-  // Подготавливаем задачу для сервера
-  char task[sizeof(uint64_t) * 3];
-  memcpy(task, &data->begin, sizeof(uint64_t));
-  memcpy(task + sizeof(uint64_t), &data->end, sizeof(uint64_t));
-  memcpy(task + 2 * sizeof(uint64_t), &data->mod, sizeof(uint64_t));
-
-  // Отправляем задачу
-  if (send(sockfd, task, sizeof(task), 0) < 0) {
-    fprintf(stderr, "Send to %s:%d failed\n", data->server.ip, data->server.port);
-    close(sockfd);
-    data->result = 1;
-    return NULL;
-  }
-
-  // Получаем результат
-  char response[sizeof(uint64_t)];
-  ssize_t bytes_received = recv(sockfd, response, sizeof(response), 0);
-  if (bytes_received < 0) {
-    fprintf(stderr, "Receive from %s:%d failed\n", data->server.ip, data->server.port);
-    close(sockfd);
-    data->result = 1;
-    return NULL;
-  }
-
-  if (bytes_received != sizeof(uint64_t)) {
-    fprintf(stderr, "Invalid response size from %s:%d\n", data->server.ip, data->server.port);
-    close(sockfd);
-    data->result = 1;
-    return NULL;
-  }
-
-  memcpy(&data->result, response, sizeof(uint64_t));
-  
-  printf("✓ Server %s:%d returned: %lu for range [%lu-%lu]\n", 
-         data->server.ip, data->server.port, data->result, data->begin, data->end);
-
-  close(sockfd);
-  return NULL;
 }
 
 int main(int argc, char **argv) {

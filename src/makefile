@@ -1,16 +1,35 @@
 CC = gcc
-CFLAGS = -Wall -std=c99
-LDFLAGS = -lpthread
+CFLAGS = -Wall -Wextra -std=c99 -pthread
+LDFLAGS = -pthread
 
-all: client server
+# Цели по умолчанию
+all: server client
 
-client: client.c
-	$(CC) $(CFLAGS) -o client client.c $(LDFLAGS)
+# Общая библиотека
+common.o: common.c common.h
+	$(CC) $(CFLAGS) -c common.c -o common.o
 
-server: server.c
-	$(CC) $(CFLAGS) -o server server.c $(LDFLAGS)
+# Сервер
+server: server.c common.o
+	$(CC) $(CFLAGS) server.c common.o -o server $(LDFLAGS)
 
+# Клиент
+client: client.c common.o
+	$(CC) $(CFLAGS) client.c common.o -o client $(LDFLAGS)
+
+# Очистка
 clean:
-	rm -f client server
+	rm -f server client *.o
 
-.PHONY: all clean
+# Пересборка
+rebuild: clean all
+
+# Запуск сервера (пример)
+run-server: server
+	./server --port 20001 --tnum 4
+
+# Запуск клиента (пример) - требует файл servers.txt
+run-client: client
+	./client --k 1000 --mod 5 --servers servers.txt
+
+.PHONY: all clean rebuild run-server run-client
